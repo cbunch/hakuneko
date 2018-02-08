@@ -1,19 +1,34 @@
 const electron = require( 'electron' );
 const path = require( 'path' );
+const url = require( 'url' );
+const config = require( './config.js' );
+const cache = require( './cache.js' );
 
-// set portable mode e.g. for path locations
-var portable = false;
 // global reference to the main window
 var win = null;
 
 /**
- *
+ * Register a custom file protocol handler that will open files from the given directory
+ * @param {*} protocol 
+ * @param {*} directory 
+ */
+function registerCacheProtocol( protocol, directory ) {
+    electron.protocol.registerFileProtocol( protocol, ( request, callback ) => {
+        // build full path (replace backslashes by forward slashes)
+        callback( { path: path.normalize( path.join( directory, url.parse( request.url ).pathname ) ) } );
+    });
+}
+
+/**
+ * Open and configure the main window of the application
  */
 function activateWindow() {
 
     if ( win !== null ) {
         return;
     }
+
+    registerCacheProtocol( config.cache.url.protocol, config.cache.directory );
 
     win = new electron.BrowserWindow( {
         width: 1120,
@@ -23,33 +38,56 @@ function activateWindow() {
             webSecurity: false // required to open local images in browser
         }
     });
+
+    // inject headers before a request is made (send to webapp to do the dirty work)
+    electron.session.defaultSession.webRequest.onBeforeSendHeaders( ['http*://*'], ( details, callback ) => {
+        if( win && win.webContents ) {
+            // inject javascript: looks stupid, but is a working solution
+            // to call a function directly within the render process (without dealing with ipcRenderer)
+            win.webContents.executeJavaScript('Engine.Request.getRequestHeaders(\'' + JSON.stringify( details ) + '\');')
+            .then( ( result ) => {
+                callback( {
+                    cancel: false,
+                    requestHeaders: result.requestHeaders
+                } );
+            } )
+            .catch( ( error ) => {
+                callback( {
+                    cancel: false,
+                    requestHeaders: details.requestHeaders
+                } );
+            } );
+        } else {
+            callback( {
+                cancel: false,
+                requestHeaders: details.requestHeaders
+            } );
+        }
+    });
+    
     win.setMenu( null );
 
-    // '../electron[.exe]' => host in development mode
-    // '../hakuneko[.exe]' => host in distribution mode
-    if( process.argv && process.argv.length > 0 && process.argv[0].match(/electron(?:\.exe)?$/i) ) {
-        // local served app
-        win.loadURL( 'http://127.0.0.1:8081' );
-        // open dev tools
+    if( config.app.developer ) {
         win.webContents.openDevTools();
-    } else {
-        // official distributed app
-        win.loadURL( 'http://hakuneko.ovh' );
     }
+
+    cache.update( config.app.url.href, config.cache.directory, ( error ) => {
+        win.loadURL( config.cache.url.href );
+    });
 
     /**
      * Replace any existing event listener function registered by previous browser window that would be released when reloding page.
      * This prevents the "Attempting to call a function in a renderer window that has been closed or released" error.
      */
-    win.webContents.on( 'devtools-reload-page', ( e ) => {
-        electron.session.defaultSession.webRequest.onBeforeSendHeaders( [], ( details, callback ) => {
-            callback({
-                cancel: false
-            });
-        });
+    win.webContents.on( 'devtools-reload-page', () => {
+        // no longer required to clear the event, because callback from renderer is no longer linked directly,
+        // it is now called by injecting javascript name)
+        //electron.session.defaultSession.webRequest.onBeforeSendHeaders( null, null );
     });
 
     win.on( 'closed', () => {
+        // close all existing windows
+        electron.BrowserWindow.getAllWindows().forEach( ( w ) => { w.close(); });
         win = null;
     });
 }
@@ -63,12 +101,19 @@ function closeWindow () {
     //}
 }
 
-// change userdata path for portable version
-if( portable ) {
-    electron.app.setPath( 'userData', path.join( path.dirname( electron.app.getPath( 'exe' ) ), 'userdata' ) );
-}
+/************************
+ *** MAIN ENTRY POINT ***
+ ************************/
+
+// register new protocol handler as standard handler to host files locally without web server
+// => required to enable access to chromium specific features such as local store, indexedDB, ...
+electron.protocol.registerStandardSchemes( [config.cache.url.protocol] );
+
+// update userdata path (e.g. for portable version)
+electron.app.setPath( 'userData', config.app.userdata );
 
 // connect events
+//electron.app.addEventListener(;
 electron.app.on( 'ready', activateWindow );
 electron.app.on( 'activate', activateWindow );
 electron.app.on( 'window-all-closed', closeWindow );

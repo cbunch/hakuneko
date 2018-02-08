@@ -12,19 +12,6 @@
                 electronRemote.getCurrentWindow().openDevTools();
             }
         });
-
-        /**
-        * some manga connectors (e.g. DynastyScans) require a referer of the same origin for embeded images => overwrite the referer for each request directly made through the electron browser
-        */
-        electronRemote.session.defaultSession.webRequest.onBeforeSendHeaders( ['http*://*'], ( details, callback ) => {
-            // TODO: only use origin of url => (new URL(details.url)).origin
-            details.requestHeaders['Referer'] = details.url;
-            callback({
-                cancel: false,
-                requestHeaders: details.requestHeaders
-            });
-        });
-
     }
 
 </script>

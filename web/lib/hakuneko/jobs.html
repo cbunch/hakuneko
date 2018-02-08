@@ -128,6 +128,7 @@
                 this.jobList = [];
                 // register callbacks for events published by download manager
                 document.addEventListener( EventListener.onDownloadStatusUpdated, this.onDownloadStatusUpdated.bind( this ) );
+                window.addEventListener( 'beforeunload', this.onBeforeClose.bind( this ) );
             }
 
             /**
@@ -192,7 +193,6 @@
                 let job = e.model.item;
                 if( job.status === DownloadStatus.failed || job.status === DownloadStatus.completed ) {
                     Engine.DownloadManager.addDownload( job.chapter );
-                    this.splice( 'jobList', e.model.index, 1 );
                 }
             }
 
@@ -213,10 +213,31 @@
                         this.notifyPath( 'jobList.' + index + '.errors' );
                     }
                 } else {
-                    // add job
+                    // remove similar job that failed
+                    let position = this.jobList.findIndex( (item) => {
+                        return job.isSame( item );
+                    });
+                    if( position > -1 && this.jobList[position].status === DownloadStatus.failed ) {
+                        this.splice( 'jobList', position, 1 );
+                    }
+                    // add new job
                     if( job.status === DownloadStatus.queued || job.status === DownloadStatus.downloading ) {
                         this.push( 'jobList', job );
                     }
+                }
+            }
+
+            /**
+             *
+             */
+            onBeforeClose( e ) {
+                // check if any job is running
+                let index = this.jobList.findIndex( ( job ) => {
+                    return ( job.status === DownloadStatus.queued || job.status === DownloadStatus.downloading );
+                });
+                if( index > -1 && !confirm( 'Downloads are still in progress.\nClose application anyway?' ) ) {
+                    // prevent window frombeeing closed
+                    e.returnValue = true;
                 }
             }
         }

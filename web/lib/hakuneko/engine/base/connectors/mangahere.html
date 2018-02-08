@@ -17,7 +17,8 @@
             super.id             = 'mangahere';
             super.label          = 'MangaHere';
             // Private members for internal usage only (convenience)
-            this.url            = 'http://www.mangahere.co';
+            this.url             = 'http://www.mangahere.cc';
+            this.urlm            = 'http://m.mangahere.co';
             // Private members for internal use that can be configured by the user through settings menu (set to undefined or false to hide from settings menu!)
             this.config = undefined;
         }
@@ -26,7 +27,11 @@
          *
          */
         _getMangaList( callback ) {
-            Engine.Request.get( this.url + '/mangalist/', undefined, undefined, ( error, content, status ) => {
+            Engine.Request.fetch( this.url + '/mangalist/', ( error, response, content ) => {
+                if( error ) {
+                    callback( error, [] );
+                    return;
+                }
                 // prevent images and iframes from loading
                 content = content.replace( /<img[^<]*?>/g, '<img>');
                 content = content.replace( /<iframe[^<]*?>/g, '<iframe>');
@@ -35,14 +40,16 @@
                 dom.innerHTML = content;
                 //console.log(dom.innerHTML);
                 let mangaList = [...dom.querySelectorAll( 'a.manga_info' )].map(  ( element ) => {
+                    // TODO (2017-12-20): sometimes the links are still pointing to the old domain => replace old domain until this is fixed on the website
+                    element.href = element.href.replace( 'mangahere.co', 'mangahere.cc' );
                     return {
                         // as mentioned before, the eventually added host prefix must be removed
                         // for full qualified domain name, the host (dynasty-scans) can also be removed
-                        id: element.href.replace( this.url, '' ).replace( window.location.origin, '' ),
+                        id: this.getRelativeLink( element ),
                         title: element.text.trim()
                     };
                 });
-                callback( null, mangaList );
+                callback( error, mangaList );
             });
         }
 
@@ -50,21 +57,35 @@
          *
          */
         _getChapterList( manga, callback ) {
-            Engine.Request.get( this.url + manga.id, undefined, undefined, ( error, content, status ) => {
+            Engine.Request.fetch( this.url + manga.id, ( error, response, content ) => {
+                if( error ) {
+                    callback( error, [] );
+                    return;
+                }
                 // prevent images and iframes from loading
                 content = content.replace( /<img[^<]*?>/g, '<img>');
                 content = content.replace( /<iframe[^<]*?>/g, '<iframe>');
                 let dom = document.createElement( 'html' );
                 // NOTE: all links without a full qualified domain name will be prefixed with host of this app => do not forget to remove this prefix from the links!
                 dom.innerHTML = content;
-                let chapterList = [...dom.querySelectorAll( 'div.detail_list ul li span.left a.color_0077' )].map(  ( element ) => {
+                let chapterList = [...dom.querySelectorAll( 'div.detail_list ul li span.left' )].map(  ( element ) => {
+                    let link = element.getElementsByTagName( 'a' )[0];
+                    let title = link.text.replace( manga.title, '' ).trim();
+                    let volume = element.querySelector( 'span.mr6' );
+                    if( volume) {
+                        volume = volume.textContent;
+                        //volume = volume.replace(/Vol ?/i, '');
+                        if( volume.length ) {
+                            title = '[' + volume + '] ' + title;
+                        }
+                    }
                     return {
-                        id: element.href.replace( this.url, '' ).replace( window.location.origin, '' ),
-                        title: element.text.replace( manga.title, '' ).trim(),
+                        id: this.getRelativeLink( link ),
+                        title: title,
                         language: 'en'
                     };
                 });
-                callback( null, chapterList );
+                callback( error, chapterList );
             });
         }
 
@@ -72,7 +93,19 @@
          *
          */
         _getPageList( manga, chapter, callback ) {
-            Engine.Request.get( ( this.url + chapter.id ).replace( 'www.mangahere.co/manga', 'm.mangahere.co/roll_manga' ), undefined, undefined, ( error, content, status ) => {
+            Engine.Request.fetch( ( this.url + chapter.id ).replace( this.url + '/manga', this.urlm + '/roll_manga' ), ( error, response, content ) => {
+                if( error ) {
+                    callback( error, [] );
+                    return;
+                }
+                if( content.indexOf( 'has been licensed' ) > -1 ) {
+                    let err = new Error( 'The manga is licensed and not available in your country!' );
+                    console.error( err );
+                    callback( err, [] );
+                    return;
+                }
+                // prevent images from being loaded
+                content = content.replace( /src=/g, 'data-src=');
                 let dom = document.createElement( 'html' );
                 dom.innerHTML = content;
                 let pageList = [...dom.querySelectorAll( 'img[data-original]' )].map( ( element ) => {

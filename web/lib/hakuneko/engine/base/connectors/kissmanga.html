@@ -17,9 +17,13 @@
             super.label         = 'KissManga';
             super.isLocked      = false;
             // Private members for internal usage only (convenience)
-            this.url            = 'http://kissmanga.com';
-            this.referer        = undefined; //'http://kissmanga.com';
-            this.agent          = undefined; //'Mozilla/5.0';
+            this.url = 'http://kissmanga.com';
+            this.reqOptionsJSON = JSON.stringify( {
+                url: this.url,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0'
+                }
+            } );
             this.sandbox        = new Worker( '/js/sandbox.js' );
             this.initialized    = false;
             this.pageLoadDelay  = 5000;
@@ -27,11 +31,11 @@
             this.config  = undefined;
 
             // initialization: bypass cloudflare and get encryption scripts
-            Engine.Request.cfGet( this.url + '/Scripts/ca.js', this.referer, this.agent, ( error, content, status ) => {
-                if( status === 200 ) {
+            Engine.Request.cloudflare( this.url + '/Scripts/ca.js', ( error, response, content ) => {
+                if( !error && response.statusCode === 200 ) {
                     let script = content + ';';
-                    Engine.Request.cfGet( this.url + '/Scripts/lo.js', this.referer, this.agent, ( error, content, status ) => {
-                        if( status === 200 ) {
+                    Engine.Request.cloudflare( this.url + '/Scripts/lo.js', ( error, response, content ) => {
+                        if( !error && response.statusCode === 200 ) {
                             script += content + ';';
                             this.sandbox.postMessage( { id: 1, content: script, return: [] } );
                             this.initialized = true;
@@ -48,82 +52,11 @@
         }
 
         /**
-         * Helper function to decrypt the protected email within the given DOM element.
+         * Parameters mangalist and page should never be used by external calls.
          */
-        cfMailDecrypt( element ) {
-            let span = element.querySelector( 'span[data-cfemail]' );
-            let script = element.querySelector( 'script[data-cfhash]' );
-            if( span && script ) {
-                let mail = span.getAttribute( 'data-cfemail' );
-                let hash = element.removeChild( script ).getAttribute( 'data-cfhash' );
-                // remove script
-                if( mail && hash ) {
-                    // decrypt mail
-                    let decrypted = '';
-                    let key = '0x' + mail.substr( 0, 2 ) | 0;
-                    for ( let i=2; i<mail.length; i+=2 ) {
-                        decrypted += '%' + ( '0' + ( '0x' + mail.substr( i, 2 ) ^ key ).toString( 16 ) ).slice( -2 );
-                    }
-                    element.replaceChild( document.createTextNode( decodeURIComponent( decrypted ) ), span );
-                }
-            }
-        }
-
-        /**
-         * Parameters mangalist, pageFrom and pageTo should never be used by external calls.
-         */
-        _getMangaList( callback, mangaList, pageFrom, pageTo ) {
-            // connector initialization failed or not yet finished
-            if( !this.initialized ) {
-                callback( null, [] );
-                return;
-            }
-            // set default values for arguments
-            mangaList = mangaList || [];
-            pageFrom = pageFrom || 1;
-            pageTo = pageTo || 9999;
-            // abort condition for recursive call
-            if( pageFrom > pageTo ) {
-                callback( null, mangaList );
-                return;
-            }
-            console.log( 'KissManga::_getMangaList()', mangaList.length, pageFrom, pageTo );
-            Engine.Request.cfGet( this.url + '/MangaList?page=' + pageFrom, this.referer, this.agent, ( error, content, status ) => {
-                console.log( error, status );
-                // on captcha request => abort
-                if( content.indexOf( 'g-recaptcha' ) > -1 || content.indexOf( 'sweetcaptcha' ) > -1 || content.indexOf( 'http://api.solvemedia.com') > -1  ) {
-                    console.error( '[ERROR: CAPTCHA required]', settings.url );
-                    callback( null, mangaList );
-                    return;
-                }
-                // prevent images and iframes from loading
-                content = content.replace( /<img[^<]*?>/g, '<img>');
-                content = content.replace( /<iframe[^<]*?>/g, '<iframe>');
-                let dom = document.createElement( 'html' );
-                // NOTE: all links without a full qualified domain name will be prefixed with host of this app => do not forget to remove this prefix from the links!
-                dom.innerHTML = content;
-                if( dom.querySelectorAll( 'li.current' ).length < 1 ) {
-                    callback( null, mangaList );
-                    return;
-                }
-                [...dom.querySelectorAll( 'table.listing tr' )].forEach(  ( element ) => {
-                    let td = element.querySelector( 'td' );
-                    if( td ) {
-                        let a = td.querySelector( 'a' );
-                        if( a && a.href ) {
-                            // clean cfmail
-                            this.cfMailDecrypt( a );
-                            mangaList.push( {
-                                // as mentioned before, the eventually added host prefix must be removed
-                                // for full qualified domain name, the host (kissmanga) can also be removed
-                                id: encodeURI( a.href.trim().replace( /\s+/, '' ).replace( this.url, '' ).replace( window.location.origin, '' ) ),
-                                title: a.text.trim()
-                            });
-                        }
-                    }
-                });
-                // recursive call to process next page
-                this._getMangaList( callback, mangaList, pageFrom + 1, pageTo );
+        _getMangaList( callback, mangaList, page ) {
+            Engine.Request.cloudflare( 'http://static.hakuneko.download/kissmanga/mangas.json', ( error, response, content ) => {
+                callback( error, ( !error && content ? JSON.parse( content ) : [] ) );
             });
         }
 
@@ -133,15 +66,21 @@
         _getChapterList( manga, callback ) {
             // connector initialization failed or not yet finished
             if( !this.initialized ) {
-                callback( null, [] );
+                callback( new Error( 'Connector ' + this.label + ' not correctly initialized!' ), [] );
                 return;
             }
-            Engine.Request.cfGet( this.url + manga.id, this.referer, this.agent, ( error, content, status ) => {
+            let options = JSON.parse( this.reqOptionsJSON );
+            options.url += manga.id;
+            Engine.Request.cloudflare( options, ( error, response, content ) => {
                 let chapterList = [];
+                if( error ) {
+                    callback( error, chapterList );
+                    return;
+                }
                 // on captcha request => abort
                 if( content.indexOf( 'g-recaptcha' ) > -1 || content.indexOf( 'sweetcaptcha' ) > -1 || content.indexOf( 'http://api.solvemedia.com') > -1  ) {
                     console.error( '[ERROR: CAPTCHA required]', settings.url );
-                    callback( null, chapterList );
+                    callback( new Error( 'Failed to get chapter from ' + this.label + ' due to captcha protection!' ), chapterList );
                     return;
                 }
                 // prevent images and iframes from loading
@@ -167,7 +106,7 @@
                         }
                     }
                 });
-                callback( null, chapterList );
+                callback( error, chapterList );
             });
         }
 
@@ -177,19 +116,25 @@
         _getPageList( manga, chapter, callback ) {
             if( this.isLocked ) {
                 console.warn( '[WARN: KissManga, too many requests]' );
-                callback( null, [] );
+                callback( new Error( 'Request to ' + this.label + ' has been skipped to prevent the client from beeing blocked for to many requests!' ), [] );
                 return;
             }
             let key = this.lock();
             setTimeout( () => {
                 this.unlock( key );
             }, this.pageLoadDelay );
-            Engine.Request.cfGet( this.url + chapter.id, this.referer, this.agent, ( error, content, status ) => {
+            let options = JSON.parse( this.reqOptionsJSON );
+            options.url += chapter.id;
+            Engine.Request.cloudflare( options, ( error, response, content ) => {
                 let pageList = [];
+                if( error ) {
+                    callback( error, pageList );
+                    return;
+                }
                 // on captcha request => abort
                 if( content.indexOf( 'g-recaptcha' ) > -1 || content.indexOf( 'sweetcaptcha' ) > -1 || content.indexOf( 'http://api.solvemedia.com') > -1  ) {
                     console.error( '[ERROR: CAPTCHA required]', settings.url );
-                    callback( null, pageList );
+                    callback( new Error( 'Failed to get chapter from ' + this.label + ' due to captcha protection!' ), pageList );
                     return;
                 }
                 // prevent images and iframes from loading
@@ -198,6 +143,7 @@
                 let dom = document.createElement( 'html' );
                 // NOTE: all links without a full qualified domain name will be prefixed with host of this app => do not forget to remove this prefix from the links!
                 dom.innerHTML = content;
+                let noScript = true;
                 [...dom.querySelectorAll( 'script' )].forEach(  ( element ) => {
                     let script = element.innerHTML;
                     // evaluate scripts related to the link encryption key
@@ -216,15 +162,18 @@
                         let eventListener = ( e ) => {
                             if( e.data.id === messageID ) {
                                 this.sandbox.removeEventListener( 'message', eventListener );
-                                callback( null, e.data.content[ 'lstImages' ] );
+                                callback( error, e.data.content[ 'lstImages' ] );
                             }
                         };
                         this.sandbox.addEventListener( 'message', eventListener, false );
                         this.sandbox.postMessage( { id: messageID, content: code, return: ['lstImages'] } );
+                        noScript = false;
                         return;
                     }
                 });
-                callback( null, pageList );
+                if( noScript ) {
+                    callback( error, pageList );
+                }
             });
         }
     }

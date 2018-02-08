@@ -1,10 +1,10 @@
 <!-- include all connectors that should be added to the list of available connectors -->
 <link rel="import" href="connectors/testing.html">
+<link rel="import" href="connectors/bookmark.html">
 <link rel="import" href="connectors/kissmanga-cdn.html">
 <link rel="import" href="connectors/kissmanga.html">
 <link rel="import" href="connectors/mangafox.html">
 <link rel="import" href="connectors/batoto-cdn.html">
-<!-- <link rel="import" href="connectors/batoto.html"> -->
 <link rel="import" href="connectors/dynasty-scans.html">
 <link rel="import" href="connectors/mangareader.html">
 <link rel="import" href="connectors/mangahere.html">
@@ -15,6 +15,7 @@
 <link rel="import" href="connectors/mangapanda.html">
 <link rel="import" href="connectors/mangapark.html">
 <link rel="import" href="connectors/manganel.html">
+<link rel="import" href="connectors/mangasee.html">
 
 <script>
 
@@ -29,12 +30,13 @@
         constructor() {
             // raw list of available connectors
             this.list = [];
+            // TODO: only register testing on localhost
             //this.register( new Testing() );
+            this.register( new BookmarkConnector() );
             this.register( new KissMangaCDN() );
             this.register( new KissManga() );
             this.register( new MangaFox() );
-            //this.register( new BatotoCDN() );
-            //this.register( new Batoto() );
+            this.register( new BatotoCDN() );
             this.register( new DynastyScans() );
             this.register( new MangaReader() );
             this.register( new MangaHere() );
@@ -45,6 +47,7 @@
             this.register( new MangaPanda() );
             this.register( new MangaPark() );
             this.register( new MangaNel() );
+            this.register( new MangaSee() );
         }
 
         /**

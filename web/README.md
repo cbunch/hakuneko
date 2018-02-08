@@ -6,6 +6,7 @@ Polymer is written in ES6 and may run directly in modern bowsers. To transpile E
 
 - `nodejs` >= 6.10.3
 - `npm` >= 4.6.1
+- `asar` >= 0.14.0
 - `polymer-cli` >= 1.0.2
 
 Installation process:
@@ -32,6 +33,12 @@ Can be downloaded from github...
 ## Serve
 
 Run `polymer serve` from the directory containing the `index.html` file (might be the development directory, or the build directory) to start a local HTTP server and preview the web-application.
+
+## Test
+
+When serving the pages the tests can be run with the electron engine and the url of the local served directory (including the tests sub-directory)
+
+`electron hakuneko/electron/src --test 'http://127.0.0.1:8081/components/web/tests/'`
 
 ## Build/Deploy
 

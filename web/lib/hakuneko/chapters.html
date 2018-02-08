@@ -68,6 +68,15 @@
             .buttonFailed {
                 color: var(--chapter-button-failed-color);
             }
+            .markerActive {
+                color: var(--chapter-marker-active-color);
+            }
+            .markerInactive {
+                color: var(--chapter-marker-inactive-color);
+            }
+            .markerDisabled {
+                display: none;
+            }
             .footer {
                 flex: 0;
             }
@@ -118,6 +127,7 @@
                 <li class$="[[ getChapterClass(selectedChapter, item.id) ]]">
                     <i class$="fa fa-fw button [[ getChapterDownloadClass(item.status) ]]" on-click="onProcessChapterClick" title$="[[ getChapterDownloadTooltip(item.status) ]]"></i>
                     <i class="fa fa-fw fa-picture-o button" style$="[[ getPagePreviewStyle(readerEnabled) ]]" on-click="onSelectChapterClick" title="Show preview of chapter's pages"></i>
+                    <i class$="fa fa-fw button [[ getChapterMarkClass(markedChapterID, item) ]]" on-click="onMarkChapterClick" title$="[[ getChapterMarkTooltip(markedChapterID, item) ]]"></i>
                     <span class$="[[ item.status ]]" title$="[[ item.title ]]">[[ item.title ]]</span>
                 </li>
             </template>
@@ -166,6 +176,8 @@
              */
             ready() {
                 super.ready();
+                // the bookmark connector which is required for some exceptional handling
+                this.bookmarkConnectorID = 'bookmarks';
                 // load settings in case UI was not ready when the settings were loaded and event was fired
                 this.readerEnabled = Engine.Settings.readerEnabled.value;
                 //
@@ -179,10 +191,14 @@
                 // list of all available chapters
                 this.chapterList = undefined;
                 // list of all existing languages in the chapter list
-                this.languageList = undefined
+                this.languageList = undefined;
+                // the chapter that has been marked as last read by the user
+                this.markedChapterID = undefined;
                 // register callbacks for published events
                 document.addEventListener( EventListener.onSettingsChanged, this.onSettingsChanged.bind( this ) );
                 document.addEventListener( EventListener.onChapterStatusChanged, this.onChapterStatusChanged.bind( this ) );
+                document.addEventListener( EventListener.onRequestChapterUp, this.onRequestChapterUp.bind( this ) );
+                document.addEventListener( EventListener.onRequestChapterDown, this.onRequestChapterDown.bind( this ) );
             }
 
             /**
@@ -202,6 +218,15 @@
                 if( !this.selectedConnector || !manga ) {
                     return;
                 }
+                // load marked chapter
+                Engine.Storage.loadFromDB( 'chaptermarks', [ manga.connector.id, manga.id ], (value, error) => {
+                    if( !error && value ) {
+                        this.set( 'markedChapterID', value.chapterID);
+                    } else {
+                        this.set( 'markedChapterID', undefined );
+                    }
+                });
+                // load chapterlist
                 let statusID = this.$.status.addToQueue( 'Loading chapter list (' + manga.title + ')' );
                 manga.getChapters( ( error, chapters ) => {
                     // only apply chapters when selected manga has not changed
@@ -244,6 +269,8 @@
                 switch ( status ) {
                     case DownloadStatus.unavailable:
                         return 'Chapter is not available';
+                    case DownloadStatus.offline:
+                        return 'OFFLINE\nThe chapter is accessable from the manga directory';
                     case DownloadStatus.available:
                         return 'AVAILABLE\nClick to download chapter';
                     case DownloadStatus.queued:
@@ -253,7 +280,7 @@
                     case DownloadStatus.completed:
                         return 'DOWNLOADED\nClick to delete and re-download chapter';
                     case DownloadStatus.failed:
-                        return 'DOWNLOAD FAILED\nClick to delete and re-download chapter';
+                        return 'DOWNLOAD FAILED\nCheck the exclamation mark in the joblist for details\nClick to delete and re-download the chapter';
                     default:
                         return 'No tooltip available!';
                 }
@@ -266,6 +293,8 @@
                 switch ( status ) {
                     case DownloadStatus.unavailable:
                         return 'fa-exclamation-triangle';
+                    case DownloadStatus.offline:
+                        return 'fa-folder-open buttonCompleted';
                     case DownloadStatus.available:
                         return 'fa-cloud buttonAvailable';
                     case DownloadStatus.queued:
@@ -284,6 +313,26 @@
             /**
              *
              */
+            getChapterMarkTooltip( markedChapterID, chapter ) {
+                if( chapter.status === DownloadStatus.offline ) {
+                    return '';
+                }
+                return ( markedChapterID === chapter.id ? 'Remove the "recently read" marker from this chapter' : 'Mark this chapter as "recently read"');
+            }
+
+            /**
+             *
+             */
+            getChapterMarkClass( markedChapterID, chapter ) {
+                if( chapter.status === DownloadStatus.offline ) {
+                    return 'markerDisabled';
+                }
+                return ( markedChapterID === chapter.id ? 'fa-bookmark markerActive' : 'fa-bookmark-o markerInactive');
+            }
+
+            /**
+             *
+             */
             getPagePreviewStyle( readerEnabled ) {
                 return ( readerEnabled ? '' : 'display: none;' );
             }
@@ -297,21 +346,19 @@
                     case DownloadStatus.unavailable:
                         alert( 'No action available!' );
                         break;
+                    case DownloadStatus.offline:
+                        alert( 'No action available!' );
+                        break;
                     case DownloadStatus.available:
                         Engine.DownloadManager.addDownload( chapter );
                         break;
                     case DownloadStatus.completed:
-                        if( confirm( 'Re-Download?' ) ) {
+                        if( confirm( 'Re-download existing chapter?' ) ) {
                             Engine.DownloadManager.addDownload( chapter );
                         }
                         break;
                     case DownloadStatus.failed:
-                        alert( 'No action available!' );
-                        /*
-                        if( confirm( 'Re-Download?' ) ) {
-                            alert( 'TODO: ...' );
-                        }
-                        */
+                        Engine.DownloadManager.addDownload( chapter );
                         break;
                     default:
                         alert( 'No action available!' );
@@ -377,10 +424,67 @@
             }
 
             /**
+             *
+             */
+            onMarkChapterClick( e ) {
+                if( !e.model || !e.model.item ) {
+                    return;
+                }
+                let chapter = e.model.item;
+                if( chapter.status === DownloadStatus.offline ) {
+                    return;
+                }
+                if( this.markedChapterID === chapter.id ) {
+                    // delete from object store
+                    Engine.Storage.deleteFromDB( 'chaptermarks', [chapter.manga.connector.id, chapter.manga.id], ( error ) => {
+                        if( !error ) {
+                            this.markedChapterID = undefined;
+                        }
+                    });
+                } else {
+                    // update in object store
+                    Engine.Storage.saveToDB( 'chaptermarks', undefined, {
+                        connectorID: chapter.manga.connector.id,
+                        mangaID: chapter.manga.id,
+                        chapterID: chapter.id
+                    }, ( error ) => {
+                        if( !error ) {
+                            this.markedChapterID = chapter.id;
+                        }
+                    });
+                }
+            }
+
+            /**
              * Observer will be executed, whenever the 'selectedChapter' is changed.
              */
             onSelectedChapterChanged( chapter ) {
                 //
+            }
+            
+            /**
+             *
+             */
+            onRequestChapterUp( e ) {
+                let chapter = e.detail;
+                let chapterList = this.getFilteredAndSortedList();
+                let index = chapterList.findIndex( ( c ) => { return c === chapter; } );
+                if( index > 0 ) {
+                   this.selectedChapter = chapterList[index-1]; 
+                }
+            }
+
+            /**
+             *
+             */
+            onRequestChapterDown( e ) {
+                //
+                let chapter = e.detail;
+                let chapterList = this.getFilteredAndSortedList();
+                let index = chapterList.findIndex( ( c ) => { return c === chapter; } );
+                if( index < chapterList.length-1 ) {
+                   this.selectedChapter = chapterList[index+1]; 
+                }
             }
 
             /**
@@ -424,8 +528,27 @@
             /**
              *
              */
+            getFilteredAndSortedList() {
+                let filterFunction = this.filterChapters( this.searchPattern, this.searchLanguage );
+                let sortFunction = this.sortChapters( this.chapterSort );
+                let chapterList = this.chapterList;
+                chapterList = ( filterFunction ? chapterList.filter( filterFunction ) : chapterList );
+                chapterList = ( sortFunction ? chapterList.sort( sortFunction ) : chapterList );
+                return chapterList;
+            }
+
+            /**
+             *
+             */
             onSettingsChanged( e ) {
                 this.readerEnabled = Engine.Settings.readerEnabled.value;
+                // chapter naming format may have been changed => reload chapter list
+                if( this.selectedManga ) {
+                    // use timeout to ensure chapter cache is cleared before list is reloaded
+                    setTimeout( ( () => {
+                        this.onSelectedMangaChanged( this.selectedManga );
+                    } ).bind( this ), 0 );
+                }
             }
 
             /**
@@ -437,7 +560,7 @@
                     || !this.selectedManga
                     || !this.selectedConnector
                     || this.selectedManga.id !== chapter.manga.id
-                    || this.selectedConnector.id !== chapter.manga.connector.id
+                    || (this.selectedConnector.id !== this.bookmarkConnectorID && this.selectedConnector.id !== chapter.manga.connector.id)
                 ) {
                     return;
                 }

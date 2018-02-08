@@ -25,6 +25,15 @@
         }
 
         /**
+         * 
+         */
+        isSame( job ) {
+            // comparing chapter objects works, because chapters for each manga are cached
+            return ( this.chapter === job.chapter);
+            //return ( this.chapter.id === job.chapter.id && this.chapter.manga.id === job.chapter.manga.id && this.chapter.manga.connector.id === job.chapter.manga.connector.id );
+        }
+
+        /**
          * Apply a new status for the job and publish the corresponding event.
          */
         setStatus( status ) {
@@ -52,18 +61,29 @@
         downloadPages( directory, compress, callback ) {
             this.setStatus( DownloadStatus.downloading );
             this.chapter.getPages( ( pageError, pages ) => {
-                if( pageError ) {
-                    this.errors.push( pageError );
+                if( pageError || !pages || pages.length < 1 ) {
+                    if( pageError ) {
+                        this.errors.push( pageError );
+                    } else {
+                        this.errors.push( new Error( 'Page list is empty' ) );
+                    }
+                    this.setStatus( DownloadStatus.failed );
+                    this.setProgress( 100 );
+                    callback();
+                    return;
                 }
+                
                 let pageData = [];
                 // save pages when all promises fulfilled
+                // no pages => promise never initialized and promise callback never executed (fulfilled)
                 let promise = new Promise( () => {
-/*
-if( Math.random() > 0.5 ) {
-    this.errors.push( new Error( 'Testing Error 1 ...' ) );
-    this.errors.push( new Error( 'Testing Error 2 ...' ) );
-}
-*/
+                    // do not store chapter when any error occured
+                    if( this.errors && this.errors.length > 0 ) {
+                        this.setStatus( DownloadStatus.failed );
+                        this.setProgress( 100 );
+                        callback();
+                        return;
+                    }
                     Engine.Storage.saveChapterPages( this.chapter, pageData, ( storageError ) => {
                         if( storageError ) {
                             this.errors.push( storageError );
@@ -77,18 +97,27 @@ if( Math.random() > 0.5 ) {
                         callback();
                     });
                 });
-
                 // get data for all pages of chapter
                 pages.forEach( ( page, index ) => {
                     let key = promise.defer();
-                    Engine.Request.get( page, undefined, undefined, ( error, content, status, headers ) => {
-                        pageData[index] = {
-                            type: headers['content-type'],
-                            data: content
-                        };
-                        this.setProgress( this.progress + 100/pages.length );
-                        promise.resolve( key );
-                    });
+                    setTimeout( () => {
+                        Engine.Request.cloudflare( { url: page, encoding: null }, ( error, response, content ) => {
+                            if( error ) {
+                                this.errors.push( error );
+                            } else {
+                                if( response.statusCode !== 200 ) {
+                                    this.errors.push( new Error( 'Page "' + page + '" returned status code ' + response.statusCode ) );
+                                } else {
+                                    pageData[index] = {
+                                        type: response.headers['Content-Type'] || response.headers['content-type'],
+                                        data: content
+                                    };
+                                }
+                            }
+                            this.setProgress( this.progress + 100/pages.length );
+                            promise.resolve( key );
+                        }, 5 );
+                    }, index * 200 );
                 });
             });
         }

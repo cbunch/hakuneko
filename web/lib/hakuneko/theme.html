@@ -16,7 +16,7 @@
                 /*
                  * general style for all elements importing this theme
                  */
-                font-family: Arial, Helvetica, sans-serif;
+                font-family: Arial, Helvetica, Sans, sans-serif;
                 font-size: 10pt;
                 color: #404040;
 
@@ -46,6 +46,7 @@
                  */
                 --manga-control-background-color: #d6d6d6;
                 --manga-control-separator: 2px groove #f0f0f0;
+                --manga-list-notification-color: rgba(255, 128, 128, 0.3);
                 --manga-list-background-color: #ffffff;
                 --manga-list-border: 1px solid rgba(0, 0, 0, 0.35);
                 --manga-list-selected: rgba(0, 128, 255, 0.3);
@@ -70,19 +71,16 @@
                 --chapter-button-downloading-color: #2080e0;
                 --chapter-button-completed-color: #e0e000;
                 --chapter-button-failed-color: #e08080;
+                --chapter-marker-active-color: #404040;
+                --chapter-marker-inactive-color: #2080e0;
 
                 /*
                  * style of bookmark manager
                  */
-                --bookmark-button-inactive-color: #808080;
-                --bookmark-button-active-color: #2080e0;
-                --bookmark-button-exist-color: #e0e000;
+                --bookmark-button-default-color: #e0e000;
+                --bookmark-button-delete-color: #e08080;
+                --bookmark-button-add-color: #00e000;
                 --bookmark-button-shadow: 0px 0px 2px rgba(0, 0, 0, 0.75);
-                --bookmark-list-background-color: #ffffff;
-                --bookmark-list-border: 1px solid rgba(0, 0, 0, 0.75);
-                --bookmark-list-manga-color: #404040;
-                --bookmark-list-connector-color: #808080;
-                --bookmark-list-delete-color: #e08080;
 
                 /*
                  * style of download manager
@@ -105,6 +103,10 @@
                 --page-thumbnail-border: 1px solid #808080;
                 --page-thumbnail-shadow: 1em 1em 2em rgba(0, 0, 0, 0.25);
                 --page-viewer-background-color: rgba(0, 0, 0, 0.95);
+                --page-reader-background-color: #202020;
+                --page-viewer-title-background-color: rgba(255, 255, 255, 0.95);
+                --page-viewer-title-shadow: 0em 0em 1em rgba(0, 0, 0, 0.5);
+                --page-chapter-title-color: #202020;
             }
 
             input[type="text"] {
@@ -179,6 +181,13 @@
             .completed {
                 /*font-weight: bold;*/
                 color: #4080f0;
+            }
+
+            .fa-suberlay {
+                position: absolute !important;
+                font-size: 0.66em !important;
+                margin-left: -0.25em !important;
+                margin-top: 1.33em !important;
             }
 
             /************************************************************/

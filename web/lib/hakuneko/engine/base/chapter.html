@@ -8,15 +8,17 @@
         /**
          *
          */
-        constructor( manga, id, title, language ) {
+        constructor( manga, id, title, language, status ) {
             this.manga = manga;
             this.id = id;
             this.title = title;
             this.language = language;
-            this.status = undefined;
+            this.status = status;
             this.pageProcess = false;
             this.pageCache = undefined;
-            this.updateStatus();
+            if( !this.status ) {
+                this.updateStatus();
+            }
         }
 
         /**
@@ -63,17 +65,19 @@
          * and a reference to the page list (undefined on error).
          */
         getPages( callback ) {
-            if( this.status === DownloadStatus.completed ) {
+            if( this.status === DownloadStatus.offline || this.status === DownloadStatus.completed ) {
                 Engine.Storage.loadChapterPages( this, callback );
             } else {
-            // check if page list is cached
+                // check if page list is cached
                 if( this.pageCache && this.pageCache.length > 0 ) {
                     callback( null, this.pageCache );
                     return;
                 }
                 // get page list directly from the connector interface and cache them
                 this.manga.connector._getPageList( this.manga, this, ( error, pages ) => {
-                    this.pageCache = pages;
+                    if( !error ) {
+                        this.pageCache = pages;
+                    }
                     callback( error, this.pageCache );
                 });
             }

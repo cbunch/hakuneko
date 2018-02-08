@@ -28,12 +28,20 @@
          */
         _getMangaList( callback ) {
             let mangaList = [];
+            let errMessage = '';
             let prms = new Promise(() => {
-                callback(null, mangaList);
+                let err = ( errMessage.length > 0 ? new Error( errMessage ) : null );
+                callback( err, mangaList );
+                return;
             });
             ['/series', '/anthologies', '/issues'].forEach((page) => {
                 let key = prms.defer();
-                Engine.Request.get( this.url + page, undefined, undefined, ( error, content, status ) => {
+                Engine.Request.fetch( this.url + page, ( error, response, content ) => {
+                    if( error ) {
+                        errMessage += error.message + '\n';
+                        prms.resolve( key );
+                        return;
+                    }
                     // prevent images and iframes from loading
                     content = content.replace( /<img[^<]*?>/g, '<img>');
                     content = content.replace( /<iframe[^<]*?>/g, '<iframe>');
@@ -45,7 +53,7 @@
                         return {
                             // as mentioned before, the eventually added host prefix must be removed
                             // for full qualified domain name, the host (dynasty-scans) can also be removed
-                            id: element.href.replace( this.url, '' ).replace( window.location.origin, '' ),
+                            id: this.getRelativeLink( element ),
                             title: element.text.trim()
                         };
                     }));
@@ -58,7 +66,11 @@
          *
          */
         _getChapterList( manga, callback ) {
-            Engine.Request.get( this.url + manga.id, undefined, undefined, ( error, content, status ) => {
+            Engine.Request.fetch( this.url + manga.id, ( error, response, content ) => {
+                if( error ) {
+                    callback( error, [] );
+                    return;
+                }
                 // prevent images and iframes from loading
                 content = content.replace( /<img[^<]*?>/g, '<img>');
                 content = content.replace( /<iframe[^<]*?>/g, '<iframe>');
@@ -68,7 +80,7 @@
                 
                 let chapterList = [...dom.querySelectorAll( '.chapter-list dd a[class="name"]' )].map(  ( element ) => {
                     return {
-                        id: element.href.replace( this.url, '' ).replace( window.location.origin, '' ),
+                        id: this.getRelativeLink( element ),
                         title: element.text.replace( manga.title, '' ).trim(),
                         language: 'en'
                     };
@@ -98,7 +110,7 @@
                     }
                 }
                 
-                callback( null, chapterList );
+                callback( error, chapterList );
             });
         }
 
@@ -106,7 +118,11 @@
          *
          */
         _getPageList( manga, chapter, callback ) {
-            Engine.Request.get( ( this.url + chapter.id ), undefined, undefined, ( error, content, status ) => {
+            Engine.Request.fetch( ( this.url + chapter.id ), ( error, response, content ) => {
+                if( error ) {
+                    callback( error, [] );
+                    return;
+                }
                 let img_data_list = new RegExp("var pages =.*").exec(content)[0];    //Get raw data
                 content = '';
                 let img_url_rgx = /"image":"([^"]+)",/g
@@ -115,7 +131,7 @@
                 while((mtch = img_url_rgx.exec(img_data_list))){   //Get all matching string
                     img_url_list.push(this.url + mtch[1]);         //Keep only url group
                 }
-                callback( null, img_url_list );
+                callback( error, img_url_list );
             });
         }
     }
